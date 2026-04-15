@@ -14,7 +14,10 @@ GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
 
 if not GEMINI_API_KEY:
     print("\n[WARNING] GEMINI_API_KEY environment variable is not set!")
-    print("   Set it with: $env:GEMINI_API_KEY = 'your-api-key-here'\n")
+    print("   Set it before starting the server:")
+    print("     Linux/macOS : export GEMINI_API_KEY='your-api-key-here'")
+    print("     Windows CMD : set GEMINI_API_KEY=your-api-key-here")
+    print("     PowerShell  : $env:GEMINI_API_KEY = 'your-api-key-here'\n")
 
 client = genai.Client(api_key=GEMINI_API_KEY)
 
@@ -27,10 +30,11 @@ app = FastAPI(
     version="1.0.0"
 )
 
-# CORS — allow Chrome extension requests
+# CORS — allow Chrome extension and local development requests.
+# Chrome extensions use chrome-extension:// origins; localhost is for dev/testing.
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origin_regex=r"^(chrome-extension://.*|http://(localhost|127\.0\.0\.1)(:\d+)?)$",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
