@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Sample Quiz — Test Page</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'Inter', sans-serif;
+      background: #f8fafc;
+      color: #1e293b;
+      padding: 40px 20px;
+      max-width: 720px;
+      margin: 0 auto;
+      line-height: 1.6;
+    }
+
+    h1 {
+      font-size: 1.8rem;
+      font-weight: 700;
+      margin-bottom: 8px;
+      color: #0f172a;
+    }
+
+    .subtitle {
+      color: #64748b;
+      margin-bottom: 32px;
+      font-size: 0.95rem;
+    }
+
+    .question {
+      background: white;
+      border: 1px solid #e2e8f0;
+      border-radius: 12px;
+      padding: 24px;
+      margin-bottom: 20px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+      transition: box-shadow 0.2s;
+    }
+
+    .question:hover {
+      box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+    }
+
+    .question-title {
+      font-weight: 600;
+      font-size: 1rem;
+      margin-bottom: 16px;
+      color: #0f172a;
+    }
+
+    .options {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .options label {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 10px 14px;
+      background: #f8fafc;
+      border: 1px solid #e2e8f0;
+      border-radius: 8px;
+      cursor: pointer;
+      transition: all 0.15s;
+      font-size: 0.9rem;
+    }
+
+    .options label:hover {
+      background: #eef2ff;
+      border-color: #6366f1;
+    }
+
+    .options input[type="radio"] {
+      accent-color: #6366f1;
+      width: 16px;
+      height: 16px;
+    }
+
+    .submit-btn {
+      display: block;
+      width: 100%;
+      padding: 14px;
+      background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
+      color: white;
+      border: none;
+      border-radius: 10px;
+      font-size: 1rem;
+      font-weight: 600;
+      cursor: pointer;
+      margin-top: 24px;
+      transition: all 0.2s;
+    }
+
+    .submit-btn:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 4px 16px rgba(99, 102, 241, 0.3);
+    }
+  </style>
+</head>
+<body>
+  <h1>📝 Sample Quiz</h1>
+  <p class="subtitle">Test page for Jaat's Assistant Chrome Extension</p>
+
+  <div class="question">
+    <div class="question-title">1. What is the capital of France?</div>
+    <div class="options">
+      <label><input type="radio" name="q1" value="a"> A) London</label>
+      <label><input type="radio" name="q1" value="b"> B) Berlin</label>
+      <label><input type="radio" name="q1" value="c"> C) Paris</label>
+      <label><input type="radio" name="q1" value="d"> D) Madrid</label>
+    </div>
+  </div>
+
+  <div class="question">
+    <div class="question-title">2. Which planet is known as the Red Planet?</div>
+    <div class="options">
+      <label><input type="radio" name="q2" value="a"> A) Venus</label>
+      <label><input type="radio" name="q2" value="b"> B) Mars</label>
+      <label><input type="radio" name="q2" value="c"> C) Jupiter</label>
+      <label><input type="radio" name="q2" value="d"> D) Saturn</label>
+    </div>
+  </div>
+
+  <div class="question">
+    <div class="question-title">3. What is the largest ocean on Earth?</div>
+    <div class="options">
+      <label><input type="radio" name="q3" value="a"> A) Atlantic Ocean</label>
+      <label><input type="radio" name="q3" value="b"> B) Indian Ocean</label>
+      <label><input type="radio" name="q3" value="c"> C) Arctic Ocean</label>
+      <label><input type="radio" name="q3" value="d"> D) Pacific Ocean</label>
+    </div>
+  </div>
+
+  <div class="question">
+    <div class="question-title">4. Who wrote "Romeo and Juliet"?</div>
+    <div class="options">
+      <label><input type="radio" name="q4" value="a"> A) Charles Dickens</label>
+      <label><input type="radio" name="q4" value="b"> B) William Shakespeare</label>
+      <label><input type="radio" name="q4" value="c"> C) Mark Twain</label>
+      <label><input type="radio" name="q4" value="d"> D) Jane Austen</label>
+    </div>
+  </div>
+
+  <div class="question">
+    <div class="question-title">5. What is the chemical symbol for water?</div>
+    <div class="options">
+      <label><input type="radio" name="q5" value="a"> A) CO2</label>
+      <label><input type="radio" name="q5" value="b"> B) O2</label>
+      <label><input type="radio" name="q5" value="c"> C) H2O</label>
+      <label><input type="radio" name="q5" value="d"> D) NaCl</label>
+    </div>
+  </div>
+
+  <button class="submit-btn" onclick="alert('Use Jaat\'s Assistant to check your answers!')">Submit Answers</button>
+</body>
+</html>

@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Jaat's Assistant</title>
+  <link rel="stylesheet" href="sidepanel.css">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+</head>
+<body>
+  <div class="app">
+    <!-- Header -->
+    <header class="header">
+      <div class="header-glow"></div>
+      <div class="header-content">
+        <div class="logo-section">
+          <div class="logo-icon">
+            <svg width="28" height="28" viewBox="0 0 28 28" fill="none">
+              <path d="M14 2L26 8V20L14 26L2 20V8L14 2Z" stroke="url(#grad1)" stroke-width="2" fill="none"/>
+              <path d="M14 6L22 10V18L14 22L6 18V10L14 6Z" fill="url(#grad2)" opacity="0.3"/>
+              <circle cx="14" cy="14" r="4" fill="url(#grad1)"/>
+              <defs>
+                <linearGradient id="grad1" x1="2" y1="2" x2="26" y2="26">
+                  <stop offset="0%" stop-color="#818cf8"/>
+                  <stop offset="100%" stop-color="#6366f1"/>
+                </linearGradient>
+                <linearGradient id="grad2" x1="6" y1="6" x2="22" y2="22">
+                  <stop offset="0%" stop-color="#818cf8"/>
+                  <stop offset="100%" stop-color="#4f46e5"/>
+                </linearGradient>
+              </defs>
+            </svg>
+          </div>
+          <div class="logo-text">
+            <h1>Jaat's Assistant</h1>
+            <span class="version-badge">v1.0</span>
+          </div>
+        </div>
+        <div class="status-indicator" id="statusIndicator">
+          <span class="status-dot"></span>
+          <span class="status-text">Ready</span>
+        </div>
+      </div>
+    </header>
+
+    <!-- Main Content -->
+    <main class="main-content">
+      <!-- Scrape Section -->
+      <section class="card scrape-section">
+        <div class="card-header">
+          <div class="card-icon">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/>
+            </svg>
+          </div>
+          <h2>Page Scanner</h2>
+        </div>
+        <p class="card-desc">Scan the current page to detect questions and answer options.</p>
+        <button class="btn btn-primary" id="scrapeBtn">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.66 0 3-4.03 3-9s-1.34-9-3-9m0 18c-1.66 0-3-4.03-3-9s1.34-9 3-9"/>
+          </svg>
+          <span>Scan Page</span>
+        </button>
+      </section>
+
+      <!-- Questions Display -->
+      <section class="card questions-section hidden" id="questionsSection">
+        <div class="card-header">
+          <div class="card-icon">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/>
+            </svg>
+          </div>
+          <h2>Detected Questions</h2>
+          <span class="badge" id="questionCount">0</span>
+        </div>
+        <div class="questions-list" id="questionsList"></div>
+      </section>
+
+      <!-- Answer Display -->
+      <section class="card answer-section hidden" id="answerSection">
+        <div class="card-header">
+          <div class="card-icon answer-icon">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"/>
+            </svg>
+          </div>
+          <h2>AI Answer</h2>
+        </div>
+        <div class="answer-content" id="answerContent"></div>
+      </section>
+
+      <!-- Loading State -->
+      <section class="card loading-section hidden" id="loadingSection">
+        <div class="loading-animation">
+          <div class="pulse-ring"></div>
+          <div class="pulse-ring ring-2"></div>
+          <div class="pulse-ring ring-3"></div>
+          <div class="loading-icon">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"/>
+            </svg>
+          </div>
+        </div>
+        <p class="loading-text">Analyzing with Gemini AI...</p>
+        <div class="loading-bar">
+          <div class="loading-bar-fill"></div>
+        </div>
+      </section>
+
+      <!-- Error State -->
+      <section class="card error-section hidden" id="errorSection">
+        <div class="error-icon">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="10"/><path d="M15 9l-6 6M9 9l6 6"/>
+          </svg>
+        </div>
+        <p class="error-text" id="errorText">Something went wrong</p>
+        <button class="btn btn-secondary" id="retryBtn">Try Again</button>
+      </section>
+    </main>
+
+    <!-- Footer -->
+    <footer class="footer">
+      <p>Powered by <strong>Gemini 1.5 Flash</strong></p>
+    </footer>
+  </div>
+
+  <script src="sidepanel.js"></script>
+</body>
+</html>
