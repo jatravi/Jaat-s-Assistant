@@ -72,6 +72,8 @@
 
     try {
       // Listen for storage update before triggering the scrape
+      let timeoutId;
+
       const onDataReady = (changes) => {
         if (changes.scrapedData?.newValue) {
           chrome.storage.session.onChanged.removeListener(onDataReady);
@@ -85,7 +87,7 @@
       chrome.storage.session.onChanged.addListener(onDataReady);
 
       // Timeout fallback in case the content script doesn't respond
-      const timeoutId = setTimeout(() => {
+      timeoutId = setTimeout(() => {
         chrome.storage.session.onChanged.removeListener(onDataReady);
         // One final check — data may have arrived before listener was attached
         chrome.storage.session.get("scrapedData", (result) => {
