@@ -50,6 +50,20 @@ class SolveResponse(BaseModel):
     explanation: str
 
 # ===== Endpoints =====
+@app.get("/")
+async def root():
+    """Root endpoint — confirms the server is running."""
+    return {
+        "name": "Jaat's Assistant API",
+        "version": "1.0.0",
+        "status": "running",
+        "endpoints": {
+            "GET /": "This page",
+            "GET /health": "Health check",
+            "POST /solve": "Solve a quiz question"
+        }
+    }
+
 @app.get("/health")
 async def health_check():
     """Health check endpoint for the side panel status indicator."""
