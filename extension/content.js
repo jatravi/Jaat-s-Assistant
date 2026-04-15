@@ -4,7 +4,7 @@
 (function () {
   "use strict";
 
-  // Prevent duplicate execution
+  // Prevent duplicate execution within a short window
   if (window.__jaatAssistantScraped) return;
   window.__jaatAssistantScraped = true;
 
@@ -268,8 +268,10 @@
     }
   });
 
-  // Reset flag after a delay so re-scraping is possible
+  // Reset flag after the scrape completes so re-scraping is possible on demand.
+  // Use a minimal delay to prevent rapid duplicate injections but allow
+  // the user to trigger a fresh scrape shortly after.
   setTimeout(() => {
     window.__jaatAssistantScraped = false;
-  }, 2000);
+  }, 500);
 })();

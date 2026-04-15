@@ -71,25 +71,43 @@
     setStatus("working", "Scanning");
 
     try {
+      // Listen for storage update before triggering the scrape
+      const onDataReady = (changes) => {
+        if (changes.scrapedData?.newValue) {
+          chrome.storage.session.onChanged.removeListener(onDataReady);
+          clearTimeout(timeoutId);
+          displayQuestions(changes.scrapedData.newValue.questions);
+          setStatus("ready", "Ready");
+          resetScrapeBtn();
+        }
+      };
+
+      chrome.storage.session.onChanged.addListener(onDataReady);
+
+      // Timeout fallback in case the content script doesn't respond
+      const timeoutId = setTimeout(() => {
+        chrome.storage.session.onChanged.removeListener(onDataReady);
+        // One final check — data may have arrived before listener was attached
+        chrome.storage.session.get("scrapedData", (result) => {
+          if (result.scrapedData && result.scrapedData.questions) {
+            displayQuestions(result.scrapedData.questions);
+            setStatus("ready", "Ready");
+          } else {
+            handleError("No questions found on this page.");
+          }
+          resetScrapeBtn();
+        });
+      }, 5000);
+
       // Trigger content script via background
       chrome.runtime.sendMessage({ type: "TRIGGER_SCRAPE" }, (response) => {
         if (chrome.runtime.lastError) {
+          chrome.storage.session.onChanged.removeListener(onDataReady);
+          clearTimeout(timeoutId);
           handleError("Could not connect to the page. Try refreshing.");
+          resetScrapeBtn();
           return;
         }
-
-        // Wait a moment for data to arrive, then read from storage
-        setTimeout(() => {
-          chrome.storage.session.get("scrapedData", (result) => {
-            if (result.scrapedData && result.scrapedData.questions) {
-              displayQuestions(result.scrapedData.questions);
-              setStatus("ready", "Ready");
-            } else {
-              handleError("No questions found on this page.");
-            }
-            resetScrapeBtn();
-          });
-        }, 1500);
       });
     } catch (err) {
       handleError("Failed to scan page: " + err.message);
