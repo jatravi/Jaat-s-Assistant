@@ -71,41 +71,48 @@
     setStatus("working", "Scanning");
 
     try {
-      // Listen for storage update before triggering the scrape
-      let timeoutId;
+      let settleId;
+      let hardTimeoutId;
 
-      const onDataReady = (changes) => {
-        if (changes.scrapedData?.newValue) {
-          chrome.storage.session.onChanged.removeListener(onDataReady);
-          clearTimeout(timeoutId);
-          displayQuestions(changes.scrapedData.newValue.questions);
-          setStatus("ready", "Ready");
+      const cleanup = () => {
+        chrome.storage.session.onChanged.removeListener(onDataReady);
+        clearTimeout(settleId);
+        clearTimeout(hardTimeoutId);
+      };
+
+      // Finalize: read the accumulated storage and display results.
+      const finalize = () => {
+        cleanup();
+        chrome.storage.session.get("scrapedData", (result) => {
+          if (result.scrapedData && result.scrapedData.questions && result.scrapedData.questions.length > 0) {
+            displayQuestions(result.scrapedData.questions);
+            setStatus("ready", "Ready");
+          } else {
+            handleError("No questions detected on this page.");
+          }
           resetScrapeBtn();
+        });
+      };
+
+      // Debounced listener: each time storage updates, wait 1.5 s for more
+      // frames to report before finalizing.
+      const onDataReady = (changes) => {
+        if (changes.scrapedData && changes.scrapedData.newValue) {
+          clearTimeout(settleId);
+          settleId = setTimeout(finalize, 1500);
         }
       };
 
       chrome.storage.session.onChanged.addListener(onDataReady);
 
-      // Timeout fallback in case the content script doesn't respond
-      timeoutId = setTimeout(() => {
-        chrome.storage.session.onChanged.removeListener(onDataReady);
-        // One final check — data may have arrived before listener was attached
-        chrome.storage.session.get("scrapedData", (result) => {
-          if (result.scrapedData && result.scrapedData.questions) {
-            displayQuestions(result.scrapedData.questions);
-            setStatus("ready", "Ready");
-          } else {
-            handleError("No questions found on this page.");
-          }
-          resetScrapeBtn();
-        });
-      }, 5000);
+      // Hard timeout — finalize after 8 seconds regardless (accounts for
+      // content-script retries + multi-frame collection).
+      hardTimeoutId = setTimeout(finalize, 8000);
 
       // Trigger content script via background
       chrome.runtime.sendMessage({ type: "TRIGGER_SCRAPE" }, (response) => {
         if (chrome.runtime.lastError) {
-          chrome.storage.session.onChanged.removeListener(onDataReady);
-          clearTimeout(timeoutId);
+          cleanup();
           handleError("Could not connect to the page. Try refreshing.");
           resetScrapeBtn();
           return;
