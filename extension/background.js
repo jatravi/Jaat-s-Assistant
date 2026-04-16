@@ -17,8 +17,7 @@ chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true })
 // Listen for messages from content script and relay to side panel
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.type === "SCRAPED_DATA") {
-    // Store scraped data so the side panel can retrieve it
-    chrome.storage.session.set({ scrapedData: message.data })
+    handleScrapedData(message.data)
       .then(() => sendResponse({ success: true }))
       .catch((err) => {
         console.error("Failed to store scraped data:", err);
@@ -28,23 +27,64 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
 
   if (message.type === "TRIGGER_SCRAPE") {
-    // Side panel requests a scrape — inject and run content script on the active tab
-    chrome.tabs.query({ active: true, currentWindow: true }, async (tabs) => {
-      if (!tabs[0]) {
-        sendResponse({ success: false, error: "No active tab found" });
-        return;
-      }
-      try {
-        await chrome.scripting.executeScript({
-          target: { tabId: tabs[0].id },
-          files: ["content.js"]
-        });
-        sendResponse({ success: true });
-      } catch (err) {
+    handleTriggerScrape()
+      .then(() => sendResponse({ success: true }))
+      .catch((err) => {
         console.error("Failed to execute content script:", err);
         sendResponse({ success: false, error: err.message });
-      }
-    });
+      });
     return true;
   }
 });
+
+/**
+ * Store scraped data with smart merging.
+ * When multiple frames send results (via allFrames), this accumulates real
+ * questions and avoids overwriting good data with empty results.
+ */
+async function handleScrapedData(newData) {
+  const existing = await chrome.storage.session.get("scrapedData");
+  const prev = existing ? existing.scrapedData : null;
+
+  const newRealQs = (newData.questions || []).filter((q) => q.type !== "full-page");
+  const prevRealQs = prev ? (prev.questions || []).filter((q) => q.type !== "full-page") : [];
+
+  let dataToStore;
+
+  if (newRealQs.length > 0 && prevRealQs.length > 0) {
+    // Merge questions coming from different frames
+    dataToStore = {
+      url: newData.url || prev.url,
+      title: newData.title || prev.title,
+      questions: prev.questions.concat(newData.questions),
+      timestamp: newData.timestamp
+    };
+  } else if (newRealQs.length > 0) {
+    dataToStore = newData;
+  } else if (prevRealQs.length > 0) {
+    // Previous data already has real questions — keep it
+    return;
+  } else {
+    // Neither has real questions — store latest (may be a full-page fallback)
+    dataToStore = newData;
+  }
+
+  await chrome.storage.session.set({ scrapedData: dataToStore });
+}
+
+/**
+ * Clear stale data and inject content script into the active tab.
+ * Uses allFrames to also scrape inside iframes (e.g., Cisco NetAcad, Canvas).
+ */
+async function handleTriggerScrape() {
+  const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
+  if (!tabs[0]) throw new Error("No active tab found");
+
+  // Clear previous scrape data so the side panel detects the fresh results
+  await chrome.storage.session.remove("scrapedData");
+
+  await chrome.scripting.executeScript({
+    target: { tabId: tabs[0].id, allFrames: true },
+    files: ["content.js"]
+  });
+}

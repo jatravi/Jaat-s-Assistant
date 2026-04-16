@@ -1,79 +1,305 @@
 // Content script for Jaat's Assistant
-// Scrapes quiz questions and options from the active web page
+// Scrapes quiz questions and options from the active web page.
+// Handles SPAs (dynamic content), iframes, ARIA roles, and custom components.
 
 (function () {
   "use strict";
 
-  // Prevent duplicate execution within a short window
-  if (window.__jaatAssistantScraped) return;
-  window.__jaatAssistantScraped = true;
+  // Prevent duplicate/overlapping scrape runs in this frame.
+  if (window.__jaatAssistantRunning) return;
+  window.__jaatAssistantRunning = true;
 
-  /**
-   * Extract questions and options from the page DOM.
-   * Handles common quiz platforms, LMS pages, and generic HTML structures.
-   */
-  function scrapeQuestions() {
-    const results = [];
+  // Hard reset so re-scraping is always possible after the lock window.
+  setTimeout(function () { window.__jaatAssistantRunning = false; }, SCRAPE_LOCK_MS);
 
-    // Strategy 1: Look for form-based quizzes (radio/checkbox groups)
-    const formGroups = findFormBasedQuestions();
-    if (formGroups.length > 0) {
-      results.push(...formGroups);
+  var MAX_ATTEMPTS = 3;
+  var RETRY_DELAY = 1000; // ms between retries
+  var SCRAPE_LOCK_MS = 6000; // guard duration — covers max retries + iframe processing
+  var MAX_OPTION_LENGTH = 500; // ignore text longer than this when looking for options
+  var MAX_PARENT_DEPTH = 10; // how far up the DOM to search for question text
+
+  // ──────────── Entry Point ────────────
+
+  function run(attempt) {
+    attempt = attempt || 1;
+
+    var questions = scrapeAllQuestions(document);
+
+    // Also try same-origin iframes reachable from this document
+    if (questions.length === 0) {
+      questions = scrapeIframes();
     }
 
-    // Strategy 2: Look for numbered/lettered question patterns in text
-    if (results.length === 0) {
-      const textQuestions = findTextBasedQuestions();
-      results.push(...textQuestions);
+    // Retry for dynamically rendered SPA content
+    if (questions.length === 0 && attempt < MAX_ATTEMPTS) {
+      setTimeout(function () { run(attempt + 1); }, RETRY_DELAY);
+      return;
     }
 
-    // Strategy 3: Fallback — grab all visible text and try to parse
-    if (results.length === 0) {
-      const fallback = fallbackScrape();
-      if (fallback) results.push(fallback);
-    }
+    sendResults(questions);
+  }
 
+  // ──────────── Iframe Traversal ────────────
+
+  function scrapeIframes() {
+    var results = [];
+    var iframes = document.querySelectorAll("iframe");
+    for (var i = 0; i < iframes.length; i++) {
+      try {
+        var doc = iframes[i].contentDocument || (iframes[i].contentWindow && iframes[i].contentWindow.document);
+        if (doc && doc.body) {
+          results = results.concat(scrapeAllQuestions(doc));
+        }
+      } catch (_) {
+        // Cross-origin — skip; handled by allFrames injection instead
+      }
+    }
     return results;
   }
 
-  /**
-   * Strategy 1: Form-based questions (radio buttons, checkboxes, selects)
-   */
-  function findFormBasedQuestions() {
-    const questions = [];
+  // ──────────── Core Scraper ────────────
 
-    // Find fieldsets, divs with role="group", or common quiz containers
-    const containers = document.querySelectorAll(
-      'fieldset, [role="group"], .question, .quiz-question, .question-container, ' +
-      '.que, .formulation, .qtext, [class*="question"], [class*="quiz"], ' +
-      '[data-question], .wpProQuiz_question'
-    );
+  function scrapeAllQuestions(doc) {
+    var results;
 
-    containers.forEach((container) => {
-      const questionObj = extractQuestionFromContainer(container);
-      if (questionObj && questionObj.question.trim().length > 10) {
-        questions.push(questionObj);
+    // Strategy 1: Container-based (known quiz/question class or role selectors)
+    results = findContainerBasedQuestions(doc);
+    if (results.length > 0) return dedupeQuestions(results);
+
+    // Strategy 2: Groups of radio/checkbox inputs or ARIA radio roles
+    results = findRadioGroupQuestions(doc);
+    if (results.length > 0) return dedupeQuestions(results);
+
+    // Strategy 3: Text-pattern matching (numbered / lettered questions)
+    results = findTextBasedQuestions(doc);
+    if (results.length > 0) return dedupeQuestions(results);
+
+    // Strategy 4: Fallback — send page text for server-side parsing
+    var fb = fallbackScrape(doc);
+    if (fb) return [fb];
+
+    return [];
+  }
+
+  // ──────────── Strategy 1: Container-Based ────────────
+
+  function findContainerBasedQuestions(doc) {
+    var questions = [];
+
+    var selector = [
+      "fieldset",
+      '[role="group"]',
+      '[role="radiogroup"]',
+      ".question",
+      ".quiz-question",
+      ".question-container",
+      ".question-content",
+      ".assessment-question",
+      // Moodle
+      ".que",
+      ".formulation",
+      ".qtext",
+      // WordPress
+      ".wpProQuiz_question",
+      // Broad class-name patterns (covers NetAcad, Canvas, Blackboard, etc.)
+      '[class*="question"]',
+      '[class*="quiz-body"]',
+      '[class*="assessment"]',
+      '[class*="multiplechoice"]',
+      '[class*="multiple-choice"]',
+      '[class*="check-understanding"]',
+      '[data-question]',
+      '[data-assessment]'
+    ].join(", ");
+
+    var containers = doc.querySelectorAll(selector);
+    var processed = [];
+
+    containers.forEach(function (container) {
+      if (isDescendantOfAny(container, processed)) return;
+
+      var q = extractFromContainer(container);
+      if (q && q.question.trim().length > 10) {
+        processed.push(container);
+        questions.push(q);
       }
     });
 
-    // Also check for standalone radio/checkbox groups not in containers
-    if (questions.length === 0) {
-      const radioGroups = {};
-      document.querySelectorAll('input[type="radio"], input[type="checkbox"]').forEach((input) => {
-        const name = input.name || input.id;
-        if (!radioGroups[name]) radioGroups[name] = [];
-        const label = findLabelForInput(input);
-        if (label) radioGroups[name].push(label);
-      });
+    return questions;
+  }
 
-      Object.values(radioGroups).forEach((options) => {
-        if (options.length >= 2) {
-          // Try to find a question text near these options
-          const firstInput = document.querySelector(`input[name="${Object.keys(radioGroups)[0]}"]`);
-          const questionText = findNearestQuestionText(firstInput);
+  function isDescendantOfAny(el, list) {
+    var parent = el.parentElement;
+    while (parent) {
+      if (list.indexOf(parent) !== -1) return true;
+      parent = parent.parentElement;
+    }
+    return false;
+  }
+
+  function extractFromContainer(container) {
+    var questionText = findQuestionText(container);
+    var options = findOptions(container);
+
+    if (!questionText && options.length === 0) return null;
+    if (!questionText) questionText = "Question detected (text not found)";
+
+    return {
+      question: questionText,
+      options: options,
+      type: options.length > 0 ? "multiple-choice" : "open-ended"
+    };
+  }
+
+  /**
+   * Locate the question/prompt text inside a container.
+   */
+  function findQuestionText(container) {
+    // Try specific class selectors first
+    var selectors = [
+      ".qtext", ".question-text", ".question-title", ".question_text",
+      ".question-stem", '[class*="question-stem"]', '[class*="prompt"]',
+      '[class*="question-body"]', '[class*="question-header"]',
+      "legend"
+    ];
+
+    for (var i = 0; i < selectors.length; i++) {
+      var el = container.querySelector(selectors[i]);
+      if (el) {
+        var text = cleanText(el);
+        if (text.length > 10) return text;
+      }
+    }
+
+    // Try headings and paragraphs
+    var tags = ["h1", "h2", "h3", "h4", "h5", "p"];
+    for (var t = 0; t < tags.length; t++) {
+      var els = container.querySelectorAll(tags[t]);
+      for (var j = 0; j < els.length; j++) {
+        var txt = cleanText(els[j]);
+        if (txt.length > 10 && !/^question\s*\d+\s*$/i.test(txt)) {
+          return txt;
+        }
+      }
+    }
+
+    // Walk text nodes for the first significant text
+    var walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT, null, false);
+    var node;
+    while ((node = walker.nextNode())) {
+      var nodeText = node.textContent.trim();
+      if (nodeText.length > 15 && !/^question\s*\d+\s*$/i.test(nodeText)) {
+        return nodeText;
+      }
+    }
+
+    return "";
+  }
+
+  /**
+   * Locate answer options inside a container.
+   * Handles native HTML inputs, ARIA roles, Angular Material, and generic class patterns.
+   */
+  function findOptions(container) {
+    var options = [];
+    var seen = {};
+
+    var addOption = function (text) {
+      var t = (text || "").trim();
+      if (t && t.length > 0 && t.length < MAX_OPTION_LENGTH && !seen[t]) {
+        seen[t] = true;
+        options.push(t);
+      }
+    };
+
+    // 1. Native radio / checkbox inputs
+    container.querySelectorAll('input[type="radio"], input[type="checkbox"]').forEach(function (input) {
+      addOption(findLabelForInput(input));
+    });
+    if (options.length >= 2) return options;
+
+    // 2. ARIA roles (custom components used by modern frameworks)
+    container.querySelectorAll('[role="radio"], [role="checkbox"], [role="option"]').forEach(function (el) {
+      addOption(cleanText(el) || el.getAttribute("aria-label") || "");
+    });
+    if (options.length >= 2) return options;
+
+    // 3. Framework-specific components (Angular Material, MUI, etc.)
+    container.querySelectorAll(
+      'mat-radio-button, mat-checkbox, .mat-radio-button, .mat-checkbox, ' +
+      '[class*="radio-button"], [class*="radio-option"], ' +
+      '[class*="answer-option"], [class*="choice-item"], [class*="option-item"]'
+    ).forEach(function (el) {
+      addOption(cleanText(el) || el.getAttribute("aria-label") || "");
+    });
+    if (options.length >= 2) return options;
+
+    // 4. Generic option / choice / answer classes
+    container.querySelectorAll(
+      '.option, .answer, .choice, [class*="option"], [class*="choice"], [class*="answer"]'
+    ).forEach(function (el) {
+      var text = cleanText(el);
+      if (text.length < MAX_OPTION_LENGTH) addOption(text);
+    });
+    if (options.length >= 2) return options;
+
+    // 5. List items
+    container.querySelectorAll("li").forEach(function (li) {
+      var text = cleanText(li);
+      if (text.length < MAX_OPTION_LENGTH) addOption(text);
+    });
+
+    return options;
+  }
+
+  // ──────────── Strategy 2: Radio Group Detection ────────────
+
+  function findRadioGroupQuestions(doc) {
+    var questions = [];
+
+    // Group native inputs by name
+    var groups = {};
+    doc.querySelectorAll('input[type="radio"], input[type="checkbox"]').forEach(function (input) {
+      var name = input.name || ("unnamed_" + input.id);
+      if (!groups[name]) groups[name] = [];
+      groups[name].push(input);
+    });
+
+    var groupNames = Object.keys(groups);
+    for (var i = 0; i < groupNames.length; i++) {
+      var inputs = groups[groupNames[i]];
+      var opts = inputs.map(function (inp) { return findLabelForInput(inp); }).filter(Boolean);
+      if (opts.length >= 2) {
+        var qText = findNearestQuestionText(inputs[0]);
+        questions.push({
+          question: qText || "Question detected (text unclear)",
+          options: opts,
+          type: "multiple-choice"
+        });
+      }
+    }
+
+    // Also look for ARIA radiogroups
+    if (questions.length === 0) {
+      doc.querySelectorAll('[role="radiogroup"]').forEach(function (group) {
+        var opts = [];
+        group.querySelectorAll('[role="radio"]').forEach(function (r) {
+          var t = cleanText(r) || r.getAttribute("aria-label") || "";
+          if (t) opts.push(t);
+        });
+        if (opts.length >= 2) {
+          var qText = findNearestQuestionText(group);
+          if (!qText) {
+            var lblId = group.getAttribute("aria-labelledby");
+            if (lblId) {
+              var lblEl = doc.getElementById(lblId);
+              if (lblEl) qText = cleanText(lblEl);
+            }
+          }
+          if (!qText) qText = group.getAttribute("aria-label") || "";
           questions.push({
-            question: questionText || "Question detected (text unclear)",
-            options: options,
+            question: qText || "Question detected (text unclear)",
+            options: opts,
             type: "multiple-choice"
           });
         }
@@ -83,137 +309,25 @@
     return questions;
   }
 
-  /**
-   * Extract question text and options from a container element
-   */
-  function extractQuestionFromContainer(container) {
-    // Find question text
-    let questionText = "";
-    const questionEl = container.querySelector(
-      '.qtext, .question-text, .question-title, .question_text, legend, ' +
-      'h2, h3, h4, p:first-of-type, [class*="question-stem"], [class*="prompt"]'
-    );
+  // ──────────── Strategy 3: Text Pattern Matching ────────────
 
-    if (questionEl) {
-      questionText = questionEl.innerText.trim();
-    } else {
-      // Grab first significant text node
-      const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT, null, false);
-      let node;
-      while ((node = walker.nextNode())) {
-        const text = node.textContent.trim();
-        if (text.length > 15) {
-          questionText = text;
-          break;
-        }
-      }
-    }
+  function findTextBasedQuestions(doc) {
+    var questions = [];
+    var body = (doc.body && doc.body.innerText) || "";
+    if (body.length < 30) return questions;
 
-    // Find options
-    const options = [];
-    const optionEls = container.querySelectorAll(
-      'input[type="radio"], input[type="checkbox"], .answer, .option, ' +
-      '[class*="choice"], [class*="answer"], li, .ml-1'
-    );
+    var blocks = body.split(/(?=(?:Q|Question)\s*\d|^\s*\d+\s*[.)]\s)/m);
 
-    optionEls.forEach((el) => {
-      let optionText = "";
-      if (el.tagName === "INPUT") {
-        optionText = findLabelForInput(el);
-      } else {
-        optionText = el.innerText.trim();
-      }
-      if (optionText && optionText.length > 0 && !options.includes(optionText)) {
-        options.push(optionText);
-      }
-    });
-
-    if (!questionText) return null;
-
-    return {
-      question: questionText,
-      options: options.length > 0 ? options : [],
-      type: options.length > 0 ? "multiple-choice" : "open-ended"
-    };
-  }
-
-  /**
-   * Find the label text for an input element
-   */
-  function findLabelForInput(input) {
-    // Check for associated <label>
-    if (input.id) {
-      const label = document.querySelector(`label[for="${input.id}"]`);
-      if (label) return label.innerText.trim();
-    }
-
-    // Check parent label
-    const parentLabel = input.closest("label");
-    if (parentLabel) return parentLabel.innerText.trim();
-
-    // Check next sibling
-    const next = input.nextElementSibling;
-    if (next && (next.tagName === "LABEL" || next.tagName === "SPAN")) {
-      return next.innerText.trim();
-    }
-
-    // Check adjacent text node
-    const nextText = input.nextSibling;
-    if (nextText && nextText.nodeType === Node.TEXT_NODE) {
-      return nextText.textContent.trim();
-    }
-
-    return "";
-  }
-
-  /**
-   * Find the nearest question-like text to an element
-   */
-  function findNearestQuestionText(el) {
-    if (!el) return null;
-    let current = el.parentElement;
-    let depth = 0;
-    while (current && depth < 5) {
-      const prev = current.previousElementSibling;
-      if (prev) {
-        const text = prev.innerText?.trim();
-        if (text && (text.includes("?") || text.length > 20)) {
-          return text;
-        }
-      }
-      current = current.parentElement;
-      depth++;
-    }
-    return null;
-  }
-
-  /**
-   * Strategy 2: Text-based pattern matching for questions
-   */
-  function findTextBasedQuestions() {
-    const questions = [];
-    const body = document.body.innerText;
-
-    // Pattern: "Q1." or "1." or "Question 1:" followed by text, then a/b/c/d or A/B/C/D options
-    const questionPattern = /(?:(?:Q|Question)\s*\.?\s*)?(\d+)\s*[.):\-]\s*(.+?)(?=(?:(?:Q|Question)\s*\.?\s*)?\d+\s*[.):\-]|$)/gis;
-    const optionPattern = /^\s*[A-Da-d][.)]\s*(.+)$/gm;
-
-    // Split by common question delimiters
-    const blocks = body.split(/(?=(?:Q|Question)\s*\d|^\s*\d+\s*[.)]\s)/m);
-
-    blocks.forEach((block) => {
-      const trimmed = block.trim();
+    blocks.forEach(function (block) {
+      var trimmed = block.trim();
       if (trimmed.length < 20) return;
 
-      // Check if this block contains a question mark
-      const lines = trimmed.split("\n").map((l) => l.trim()).filter(Boolean);
+      var lines = trimmed.split("\n").map(function (l) { return l.trim(); }).filter(Boolean);
+      var questionText = "";
+      var options = [];
 
-      let questionText = "";
-      const options = [];
-
-      lines.forEach((line) => {
-        // Check if line is an option (starts with A), B), a., etc.)
-        const optMatch = line.match(/^\s*[A-Da-d][.)]\s*(.+)/);
+      lines.forEach(function (line) {
+        var optMatch = line.match(/^\s*[A-Da-d][.)]\s*(.+)/);
         if (optMatch) {
           options.push(line.trim());
         } else if (!questionText && (line.includes("?") || line.match(/^\s*(?:Q|Question)?\s*\d/i))) {
@@ -233,45 +347,131 @@
     return questions;
   }
 
-  /**
-   * Strategy 3: Fallback — send full page text
-   */
-  function fallbackScrape() {
-    const bodyText = document.body.innerText.trim();
-    if (bodyText.length < 20) return null;
+  // ──────────── Strategy 4: Fallback ────────────
 
-    // Truncate to a reasonable length
-    const truncated = bodyText.substring(0, 5000);
+  function fallbackScrape(doc) {
+    var text = (doc.body && doc.body.innerText || "").trim();
+    if (text.length < 50) return null;
 
     return {
-      question: truncated,
+      question: text.substring(0, 5000),
       options: [],
       type: "full-page"
     };
   }
 
-  // Run the scraper
-  const scrapedData = scrapeQuestions();
+  // ──────────── Helpers ────────────
 
-  // Send results to background script
-  chrome.runtime.sendMessage({
-    type: "SCRAPED_DATA",
-    data: {
-      url: window.location.href,
-      title: document.title,
-      questions: scrapedData,
-      timestamp: Date.now()
+  function findLabelForInput(input) {
+    // Associated <label for="id">
+    if (input.id) {
+      try {
+        var escapedId = typeof CSS !== "undefined" && CSS.escape
+          ? CSS.escape(input.id)
+          : input.id.replace(/([^\w-])/g, "\\$1");
+        var label = input.ownerDocument.querySelector('label[for="' + escapedId + '"]');
+        if (label) return cleanText(label);
+      } catch (_) { /* selector failed — skip */ }
     }
-  }, (response) => {
-    if (chrome.runtime.lastError) {
-      console.warn("Jaat's Assistant: Failed to send scraped data:", chrome.runtime.lastError.message);
-    }
-  });
 
-  // Reset flag after the scrape completes so re-scraping is possible on demand.
-  // Use a minimal delay to prevent rapid duplicate injections but allow
-  // the user to trigger a fresh scrape shortly after.
-  setTimeout(() => {
-    window.__jaatAssistantScraped = false;
-  }, 500);
+    // Parent <label>
+    var parentLabel = input.closest("label");
+    if (parentLabel) return cleanText(parentLabel);
+
+    // Next sibling element
+    var next = input.nextElementSibling;
+    if (next && (next.tagName === "LABEL" || next.tagName === "SPAN" || next.tagName === "DIV")) {
+      return cleanText(next);
+    }
+
+    // Adjacent text node
+    var nextText = input.nextSibling;
+    if (nextText && nextText.nodeType === Node.TEXT_NODE) {
+      return nextText.textContent.trim();
+    }
+
+    // Parent element text (for <div><input> Option text</div>)
+    var parentEl = input.parentElement;
+    if (parentEl) {
+      var clone = parentEl.cloneNode(true);
+      clone.querySelectorAll("input").forEach(function (inp) { inp.remove(); });
+      var t = (clone.innerText || "").trim();
+      if (t.length > 0 && t.length < 200) return t;
+    }
+
+    return "";
+  }
+
+  function findNearestQuestionText(el) {
+    if (!el) return null;
+    var current = el.parentElement;
+    var depth = 0;
+    while (current && depth < MAX_PARENT_DEPTH) {
+      // Check preceding siblings
+      var prev = current.previousElementSibling;
+      while (prev) {
+        var text = cleanText(prev);
+        if (text && text.length > 10 && !/^question\s*\d+\s*$/i.test(text)) {
+          return text;
+        }
+        // Also check inside the sibling
+        var inner = prev.querySelector("p, h1, h2, h3, h4, h5, span, div");
+        if (inner) {
+          var innerText = cleanText(inner);
+          if (innerText && innerText.length > 10) return innerText;
+        }
+        prev = prev.previousElementSibling;
+      }
+      // Check current element for headings/paragraphs
+      var tags = ["h1", "h2", "h3", "h4", "h5", "p"];
+      for (var i = 0; i < tags.length; i++) {
+        var heading = current.querySelector(tags[i]);
+        if (heading) {
+          var hText = cleanText(heading);
+          if (hText && hText.length > 10 && !/^question\s*\d+\s*$/i.test(hText)) return hText;
+        }
+      }
+      current = current.parentElement;
+      depth++;
+    }
+    return null;
+  }
+
+  function cleanText(el) {
+    return (el.innerText || el.textContent || "").trim();
+  }
+
+  function dedupeQuestions(questions) {
+    var seen = {};
+    return questions.filter(function (q) {
+      var key = q.question.substring(0, 100).toLowerCase();
+      if (seen[key]) return false;
+      seen[key] = true;
+      return true;
+    });
+  }
+
+  function sendResults(questions) {
+    chrome.runtime.sendMessage(
+      {
+        type: "SCRAPED_DATA",
+        data: {
+          url: window.location.href,
+          title: document.title,
+          questions: questions,
+          timestamp: Date.now()
+        }
+      },
+      function () {
+        if (chrome.runtime.lastError) {
+          console.warn("Jaat's Assistant: Failed to send scraped data:", chrome.runtime.lastError.message);
+        }
+        // Allow re-scraping
+        window.__jaatAssistantRunning = false;
+      }
+    );
+  }
+
+  // ──────────── Start ────────────
+  run(1);
 })();

@@ -159,5 +159,30 @@
   </div>
 
   <button class="submit-btn" onclick="alert('Use Jaat\'s Assistant to check your answers!')">Submit Answers</button>
+
+  <hr style="margin:40px 0">
+
+  <!-- ===== NetAcad / ARIA-style quiz (tests Strategy 2 — ARIA radiogroup) ===== -->
+  <h1>📡 NetAcad-Style Quiz (ARIA roles, no native inputs)</h1>
+  <p class="subtitle">Simulates Cisco Networking Academy question structure</p>
+
+  <div class="question" style="margin-bottom:20px">
+    <div class="question-title">6. Which connection physically connects the end device to the network?</div>
+    <div role="radiogroup" aria-label="Which connection physically connects the end device to the network?">
+      <div role="radio" aria-checked="false" tabindex="0" style="padding:10px;cursor:pointer">NIC</div>
+      <div role="radio" aria-checked="false" tabindex="0" style="padding:10px;cursor:pointer">Port</div>
+      <div role="radio" aria-checked="false" tabindex="0" style="padding:10px;cursor:pointer">Interface</div>
+    </div>
+  </div>
+
+  <div class="question" style="margin-bottom:20px">
+    <div class="question-title">7. What type of network covers a large geographic area?</div>
+    <div role="radiogroup" aria-label="What type of network covers a large geographic area?">
+      <div role="radio" aria-checked="false" tabindex="0" style="padding:10px;cursor:pointer">LAN</div>
+      <div role="radio" aria-checked="false" tabindex="0" style="padding:10px;cursor:pointer">WAN</div>
+      <div role="radio" aria-checked="false" tabindex="0" style="padding:10px;cursor:pointer">PAN</div>
+      <div role="radio" aria-checked="false" tabindex="0" style="padding:10px;cursor:pointer">MAN</div>
+    </div>
+  </div>
 </body>
 </html>
