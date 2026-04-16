@@ -71,6 +71,8 @@
     setStatus("working", "Scanning");
 
     try {
+      const FRAME_SETTLE_DELAY_MS = 1500; // wait after last update for additional frames
+      const MAX_COLLECTION_TIMEOUT_MS = 8000; // absolute max wait for all frames
       let settleId;
       let hardTimeoutId;
 
@@ -99,7 +101,7 @@
       const onDataReady = (changes) => {
         if (changes.scrapedData && changes.scrapedData.newValue) {
           clearTimeout(settleId);
-          settleId = setTimeout(finalize, 1500);
+          settleId = setTimeout(finalize, FRAME_SETTLE_DELAY_MS);
         }
       };
 
@@ -107,7 +109,7 @@
 
       // Hard timeout — finalize after 8 seconds regardless (accounts for
       // content-script retries + multi-frame collection).
-      hardTimeoutId = setTimeout(finalize, 8000);
+      hardTimeoutId = setTimeout(finalize, MAX_COLLECTION_TIMEOUT_MS);
 
       // Trigger content script via background
       chrome.runtime.sendMessage({ type: "TRIGGER_SCRAPE" }, (response) => {

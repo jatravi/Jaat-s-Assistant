@@ -9,11 +9,14 @@
   if (window.__jaatAssistantRunning) return;
   window.__jaatAssistantRunning = true;
 
-  // Hard reset after 6 seconds so re-scraping is always possible.
-  setTimeout(function () { window.__jaatAssistantRunning = false; }, 6000);
+  // Hard reset so re-scraping is always possible after the lock window.
+  setTimeout(function () { window.__jaatAssistantRunning = false; }, SCRAPE_LOCK_MS);
 
   var MAX_ATTEMPTS = 3;
   var RETRY_DELAY = 1000; // ms between retries
+  var SCRAPE_LOCK_MS = 6000; // guard duration — covers max retries + iframe processing
+  var MAX_OPTION_LENGTH = 500; // ignore text longer than this when looking for options
+  var MAX_PARENT_DEPTH = 10; // how far up the DOM to search for question text
 
   // ──────────── Entry Point ────────────
 
@@ -203,7 +206,7 @@
 
     var addOption = function (text) {
       var t = (text || "").trim();
-      if (t && t.length > 0 && t.length < 500 && !seen[t]) {
+      if (t && t.length > 0 && t.length < MAX_OPTION_LENGTH && !seen[t]) {
         seen[t] = true;
         options.push(t);
       }
@@ -236,14 +239,14 @@
       '.option, .answer, .choice, [class*="option"], [class*="choice"], [class*="answer"]'
     ).forEach(function (el) {
       var text = cleanText(el);
-      if (text.length < 300) addOption(text);
+      if (text.length < MAX_OPTION_LENGTH) addOption(text);
     });
     if (options.length >= 2) return options;
 
     // 5. List items
     container.querySelectorAll("li").forEach(function (li) {
       var text = cleanText(li);
-      if (text.length < 300) addOption(text);
+      if (text.length < MAX_OPTION_LENGTH) addOption(text);
     });
 
     return options;
@@ -363,9 +366,12 @@
     // Associated <label for="id">
     if (input.id) {
       try {
-        var label = input.ownerDocument.querySelector('label[for="' + CSS.escape(input.id) + '"]');
+        var escapedId = typeof CSS !== "undefined" && CSS.escape
+          ? CSS.escape(input.id)
+          : input.id.replace(/([^\w-])/g, "\\$1");
+        var label = input.ownerDocument.querySelector('label[for="' + escapedId + '"]');
         if (label) return cleanText(label);
-      } catch (_) { /* CSS.escape not available — skip */ }
+      } catch (_) { /* selector failed — skip */ }
     }
 
     // Parent <label>
@@ -400,7 +406,7 @@
     if (!el) return null;
     var current = el.parentElement;
     var depth = 0;
-    while (current && depth < 10) {
+    while (current && depth < MAX_PARENT_DEPTH) {
       // Check preceding siblings
       var prev = current.previousElementSibling;
       while (prev) {
